@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { supabase } from '../../lib/supabase'
+import { supabase, isSupabaseConfigured } from '../../lib/supabase'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { Lock, Mail, Loader2, Sparkles, CheckCircle2 } from 'lucide-react'
 
@@ -28,27 +28,41 @@ export const Login: React.FC = () => {
     setLoading(true)
     setError(null)
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password
-    })
-
-    if (error) {
-      if (error.message.toLowerCase().includes('email not confirmed')) {
-        setError('Your email address is not verified yet. Please check your Gmail inbox and click the verification link before signing in.')
-      } else {
-        setError(error.message)
-      }
+    if (!isSupabaseConfigured) {
+      setError("Supabase backend environment variables are missing. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Vercel project settings and redeploy.")
       setLoading(false)
-    } else {
-      const user = data?.user
-      if (user && user.email_confirmed_at === null && user.app_metadata?.provider === 'email') {
-        await supabase.auth.signOut()
-        setError('Please verify your email address via the link sent to your inbox before logging in.')
+      return
+    }
+
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      })
+
+      if (error) {
+        const lowerMsg = error.message.toLowerCase()
+        if (lowerMsg.includes('email not confirmed')) {
+          setError('Your email address is not verified yet. Please check your Gmail inbox and click the verification link before signing in.')
+        } else if (lowerMsg.includes('failed to fetch') || lowerMsg.includes('fetch')) {
+          setError('Failed to connect to backend server. Please verify VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Vercel settings and redeploy, or check your internet connection.')
+        } else {
+          setError(error.message)
+        }
         setLoading(false)
-        return
+      } else {
+        const user = data?.user
+        if (user && user.email_confirmed_at === null && user.app_metadata?.provider === 'email') {
+          await supabase.auth.signOut()
+          setError('Please verify your email address via the link sent to your inbox before logging in.')
+          setLoading(false)
+          return
+        }
+        navigate('/dashboard')
       }
-      navigate('/dashboard')
+    } catch (err: any) {
+      setError('Failed to connect to backend server. Please check your network connection or Vercel environment variables.')
+      setLoading(false)
     }
   }
 
